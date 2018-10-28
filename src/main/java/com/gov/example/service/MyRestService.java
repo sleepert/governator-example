@@ -10,9 +10,6 @@ import com.netflix.archaius.api.Config;
 public class MyRestService {
   
   @Inject
-  private MyService service;
-  
-  @Inject
   private Config config;
   
   @GET
