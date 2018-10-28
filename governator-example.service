@@ -1,0 +1,13 @@
+[Unit]
+Description=Governator example
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+User=governator-example-user
+Group=governator-example-group
+TimeoutSec=20
+Restart=always
+WorkingDirectory=/opt/governator-example
+ExecStart=/usr/bin/java -jar lib/governator-example.jar

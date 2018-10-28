@@ -1,0 +1,101 @@
+plugins {
+  id "nebula.ospackage" version "4.10.0"
+}
+
+apply plugin: 'java'
+apply plugin: 'nebula.deb'
+
+def service = rootProject.name
+def user = service + "-user"
+def group = service + "-group"
+ext.shell = "#!/bin/sh"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'org.slf4j:slf4j-api:1.7.25'
+    compile 'org.slf4j:slf4j-log4j12:1.7.25'
+
+    compile 'com.netflix.governator:governator:1.17.5'
+    compile 'com.netflix.governator:governator-jetty:1.17.5'
+    compile 'com.netflix.governator:governator-jersey:1.17.5'
+    
+    compile 'com.netflix.archaius:archaius2-guice:2.3.13'
+    
+    testCompile 'junit:junit:4.12'
+}
+
+jar {
+  manifest {
+    attributes(
+      "Class-Path": configurations.compile.collect { it.getName() }.join(' '),
+      "Main-Class": "com.gov.example.Application")
+  }
+}
+
+task createDeb(type: Deb, dependsOn: 'createServiceScripts') {
+  packageName = rootProject.name
+  version = '0.0.1'
+  release = '18'
+
+  preInstall file('scripts/deb/preInstall.sh')
+  postInstall file('scripts/deb/postInstall.sh')
+  preUninstall file('scripts/deb/preUninstall.sh')
+  postUninstall file('scripts/deb/postUninstall.sh')
+  
+  requires('java8-runtime-headless')
+
+  into "/opt/${service}"
+
+  from(jar.outputs.files) {
+    into 'lib'
+  }
+  from(configurations.runtime) {
+    into 'lib'
+  }
+  from("./${service}.service") {
+    into 'bin'
+  }
+
+  link("/etc/systemd/system/${service}.service", "/opt/${service}/bin/${service}.service")
+}
+
+/*
+ Creates a simple set of (un)install scripts that are run when we install
+ our debian package. These are recreated eachtime we run the createDeb task.
+ The scripts will create a new user and group, will set user permissions on
+ the libraries that are copied to the opt folder and will ensure that the
+ service is stopped each time a new deb release is installed.
+*/
+task createServiceScripts() {
+  doFirst {
+    delete "scripts/"
+  }
+  doLast {
+    mkdir "scripts/deb"
+    createFile("scripts/deb/preInstall.sh",
+      "/usr/sbin/groupadd -f -r ${group}\n\n",
+      "/usr/sbin/useradd -r -m -c \"${user} user\" ${user} -g ${group} 2> /dev/null || :")
+
+    createFile("scripts/deb/postInstall.sh",
+      "chown -R ${user}:${group} /opt/${service}\nsystemctl enable /opt/${service}/bin/${service}.service")
+
+    createFile("scripts/deb/preUninstall.sh",
+      "if ( \$(ps -ef | grep ${service}.jar | grep -v grep | wc -l) > 0 ) then\n",
+      "  service ${service} stop\nfi")
+  
+    createFile("scripts/deb/postUninstall.sh", 
+      "echo \"uninstall successful\"")
+  }
+}
+
+def createFile(fileName, firstLine, secondLine="") { 
+  def file = new File(fileName)
+  if (!file.canRead()) {
+    file << "${shell}\n\n"
+    file << firstLine
+    file << secondLine
+  }
+}
